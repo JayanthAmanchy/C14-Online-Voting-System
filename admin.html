@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel — CivicVote</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="site-nav"></div>
+
+<header class="page-head">
+  <div class="container">
+    <span class="eyebrow">Election Administration</span>
+    <h1>Admin Panel</h1>
+    <p>Manage candidates, control election status, and oversee the voter roll.</p>
+  </div>
+</header>
+
+<main class="app-main">
+  <div class="container">
+
+    <div class="stat-row" id="stat-row"></div>
+
+    <div class="election-toggle">
+      <label class="switch">
+        <input type="checkbox" id="election-switch">
+        <span class="slider"></span>
+      </label>
+      <div>
+        <strong id="election-toggle-title">Election status</strong>
+        <p style="margin:2px 0 0; font-size:.85rem;" id="election-toggle-desc">Toggle to open or close voting.</p>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="candidates">Candidates</button>
+      <button class="tab-btn" data-tab="voters">Registered Voters</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-candidates">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; gap:12px; flex-wrap:wrap;">
+        <h3 style="margin:0;">Candidates</h3>
+        <button class="btn btn-primary btn-sm" id="add-candidate-btn">+ Add Candidate</button>
+      </div>
+      <div id="candidates-table-area"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-voters">
+      <h3 style="margin-bottom:18px;">Registered Voters</h3>
+      <div id="voters-table-area"></div>
+    </div>
+
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<!-- Add / Edit candidate modal -->
+<div class="modal-overlay" id="candidate-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modal-title" style="margin:0;">Add Candidate</h3>
+      <button class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <div class="form-msg" id="modal-msg"></div>
+    <form id="candidate-form">
+      <input type="hidden" id="candidate-id">
+      <div class="field">
+        <label for="candidate-name">Candidate name</label>
+        <input type="text" id="candidate-name" required>
+      </div>
+      <div class="field">
+        <label for="candidate-party">Party / Affiliation</label>
+        <input type="text" id="candidate-party" required>
+      </div>
+      <div class="field">
+        <label for="candidate-desc">Short description</label>
+        <textarea id="candidate-desc" rows="3" placeholder="One or two sentences about their platform"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="candidate-submit-btn">Save Candidate</button>
+    </form>
+  </div>
+</div>
+
+<script src="script.js"></script>
+<script>
+  renderNav('admin');
+  renderFooter();
+  const admin = requireAdmin();
+
+  const statRow = document.getElementById("stat-row");
+  const candidatesArea = document.getElementById("candidates-table-area");
+  const votersArea = document.getElementById("voters-table-area");
+  const electionSwitch = document.getElementById("election-switch");
+  const toggleTitle = document.getElementById("election-toggle-title");
+  const toggleDesc = document.getElementById("election-toggle-desc");
+
+  function renderStats(){
+    const { candidates, totalVotes } = getResults();
+    const voters = getUsers().filter(u => u.role === "voter");
+    const votedCount = voters.filter(v => v.hasVoted).length;
+    statRow.innerHTML = `
+      <div class="stat-card"><div class="num">${candidates.length}</div><div class="lbl">Candidates</div></div>
+      <div class="stat-card"><div class="num">${voters.length}</div><div class="lbl">Registered Voters</div></div>
+      <div class="stat-card"><div class="num">${votedCount}</div><div class="lbl">Votes Cast</div></div>
+      <div class="stat-card"><div class="num">${totalVotes}</div><div class="lbl">Total Ballots</div></div>
+    `;
+  }
+
+  function renderElectionToggle(){
+    const election = getElection();
+    electionSwitch.checked = election.open;
+    toggleTitle.textContent = election.title;
+    toggleDesc.textContent = election.open ? "Polls are open — voters can currently submit ballots." : "Polls are closed — voting is disabled for all voters.";
+  }
+
+  function renderCandidatesTable(){
+    const candidates = getCandidates();
+    if(candidates.length === 0){
+      candidatesArea.innerHTML = `<div class="empty-state card"><p>No candidates yet. Add the first one to get started.</p></div>`;
+      return;
+    }
+    candidatesArea.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Party</th><th>Votes</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${candidates.map(c => `
+            <tr>
+              <td><strong>${escapeHtml(c.name)}</strong><div style="font-size:.8rem; color:var(--ink-muted); max-width:320px;">${escapeHtml(c.description||"")}</div></td>
+              <td>${escapeHtml(c.party)}</td>
+              <td class="count" style="font-family:var(--font-mono); font-weight:600;">${c.votes}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="btn btn-ghost btn-sm" data-edit="${c.id}">Edit</button>
+                  <button class="btn btn-danger btn-sm" data-delete="${c.id}">Delete</button>
+                </div>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+
+    candidatesArea.querySelectorAll("[data-edit]").forEach(btn => {
+      btn.addEventListener("click", () => openModal(btn.getAttribute("data-edit")));
+    });
+    candidatesArea.querySelectorAll("[data-delete]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-delete");
+        const candidate = getCandidates().find(c => c.id === id);
+        if(confirm(`Delete candidate "${candidate ? candidate.name : ''}"? This cannot be undone.`)){
+          deleteCandidate(id);
+          refreshAll();
+        }
+      });
+    });
+  }
+
+  function renderVotersTable(){
+    const voters = getUsers().filter(u => u.role === "voter");
+    if(voters.length === 0){
+      votersArea.innerHTML = `<div class="empty-state card"><p>No voters have registered yet.</p></div>`;
+      return;
+    }
+    votersArea.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Voter ID</th><th>Email</th><th>Age</th><th>Status</th></tr></thead>
+        <tbody>
+          ${voters.map(v => `
+            <tr>
+              <td><strong>${escapeHtml(v.name)}</strong></td>
+              <td style="font-family:var(--font-mono);">${escapeHtml(v.voterId)}</td>
+              <td>${escapeHtml(v.email)}</td>
+              <td>${v.age}</td>
+              <td>${v.hasVoted ? '<span class="badge success">Voted</span>' : '<span class="badge pending">Pending</span>'}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function refreshAll(){
+    renderStats();
+    renderElectionToggle();
+    renderCandidatesTable();
+    renderVotersTable();
+  }
+
+  /* Tabs */
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.getAttribute("data-tab")).classList.add("active");
+    });
+  });
+
+  /* Election toggle */
+  electionSwitch.addEventListener("change", () => {
+    setElection({ open: electionSwitch.checked });
+    renderElectionToggle();
+  });
+
+  /* Modal logic */
+  const modal = document.getElementById("candidate-modal");
+  const modalTitle = document.getElementById("modal-title");
+  const modalMsg = document.getElementById("modal-msg");
+  const candidateForm = document.getElementById("candidate-form");
+
+  function openModal(editId){
+    modalMsg.className = "form-msg";
+    candidateForm.reset();
+    document.getElementById("candidate-id").value = "";
+
+    if(editId){
+      const c = getCandidates().find(c => c.id === editId);
+      if(c){
+        modalTitle.textContent = "Edit Candidate";
+        document.getElementById("candidate-id").value = c.id;
+        document.getElementById("candidate-name").value = c.name;
+        document.getElementById("candidate-party").value = c.party;
+        document.getElementById("candidate-desc").value = c.description || "";
+      }
+    } else {
+      modalTitle.textContent = "Add Candidate";
+    }
+    modal.classList.add("show");
+  }
+  function closeModal(){ modal.classList.remove("show"); }
+
+  document.getElementById("add-candidate-btn").addEventListener("click", () => openModal(null));
+  document.getElementById("modal-close").addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => { if(e.target === modal) closeModal(); });
+
+  candidateForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const id = document.getElementById("candidate-id").value;
+    const name = document.getElementById("candidate-name").value.trim();
+    const party = document.getElementById("candidate-party").value.trim();
+    const description = document.getElementById("candidate-desc").value.trim();
+
+    if(!name || !party){
+      showMsg(modalMsg, "Name and party are required.", "error");
+      return;
+    }
+
+    if(id){
+      updateCandidate(id, { name, party, description });
+    } else {
+      addCandidate({ name, party, description });
+    }
+    closeModal();
+    refreshAll();
+  });
+
+  if(admin) refreshAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voter Registration — CivicVote</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="site-nav"></div>
+
+<div class="auth-wrap">
+  <div class="auth-card" style="max-width:520px;">
+    <div class="auth-head">
+      <span class="seal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#E4D2AE" stroke-width="1.6"><path d="M12 2l7 3v6c0 5-3.4 8.6-7 10-3.6-1.4-7-5-7-10V5l7-3z"/><path d="M9 12l2 2 4-4.2"/></svg>
+      </span>
+      <span class="eyebrow">Voter Registration</span>
+      <h1 style="font-size:1.7rem; margin-top:.2em;">Create your voter account</h1>
+      <p style="margin:0;">Fill in your details below to join the electoral roll.</p>
+    </div>
+
+    <div class="form-msg" id="register-msg"></div>
+
+    <form id="register-form" novalidate>
+      <div class="field">
+        <label for="fullName">Full name</label>
+        <input type="text" id="fullName" placeholder="e.g. Jordan Ellery" required autocomplete="name">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="voterId">Voter ID</label>
+          <input type="text" id="voterId" placeholder="e.g. VOT10234" required>
+        </div>
+        <div class="field">
+          <label for="age">Age</label>
+          <input type="number" id="age" min="18" max="120" placeholder="18+" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" placeholder="you@example.com" required autocomplete="email">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Minimum 6 characters" required autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="confirmPassword">Confirm password</label>
+          <input type="password" id="confirmPassword" placeholder="Re-enter password" required autocomplete="new-password">
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block">Register as Voter</button>
+    </form>
+
+    <div class="auth-foot">
+      Already registered? <a href="login.html">Login here</a>
+    </div>
+  </div>
+</div>
+
+<div id="site-footer"></div>
+
+<script src="script.js"></script>
+<script>
+  renderNav('register');
+  renderFooter();
+  redirectIfLoggedIn();
+
+  const form = document.getElementById("register-form");
+  const msg = document.getElementById("register-msg");
+
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+
+    const name = document.getElementById("fullName").value.trim();
+    const voterId = document.getElementById("voterId").value.trim();
+    const age = document.getElementById("age").value;
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    const confirmPassword = document.getElementById("confirmPassword").value;
+
+    if(!name || !voterId || !age || !email || !password || !confirmPassword){
+      showMsg(msg, "Please complete all fields.", "error");
+      return;
+    }
+    if(Number(age) < 18){
+      showMsg(msg, "You must be 18 or older to register as a voter.", "error");
+      return;
+    }
+    if(password.length < 6){
+      showMsg(msg, "Password must be at least 6 characters.", "error");
+      return;
+    }
+    if(password !== confirmPassword){
+      showMsg(msg, "Passwords do not match.", "error");
+      return;
+    }
+
+    const result = registerUser({ name, voterId, age, email, password });
+    if(!result.ok){
+      showMsg(msg, result.message, "error");
+      return;
+    }
+
+    showMsg(msg, "Registration successful! Redirecting to login…", "success");
+    form.reset();
+    setTimeout(() => { window.location.href = "login.html"; }, 900);
+  });
+</script>
+</body>
+</html>
