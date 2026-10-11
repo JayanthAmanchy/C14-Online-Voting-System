@@ -1,0 +1,63 @@
+__SQL Queries :__
+
+1. Candidates with vote totals  
+
+SELECT c.candidate_id, c.candidate_name, c.party,  
+       count(b.ballot_id) AS votes  
+FROM candidate c  
+LEFT JOIN ballot b ON b.candidate_id = c.candidate_id  
+GROUP BY c.candidate_id, c.candidate_name, c.party  
+ORDER BY count(b.ballot_id) DESC, c.candidate_id;  
+
+2. Turnout  
+SELECT (SELECT count(*) FROM app_user WHERE lower(role)='voter') AS registered_voters,  
+       (SELECT count(*) FROM ballot)                                
+        AS ballots_cast,  
+       (SELECT count(*) FROM app_user u WHERE lower(u.role)='voter'  
+            AND NOT EXISTS (SELECT 1 FROM ballot b WHERE b.user_id=u.user_id))  
+                                                                  AS yet_to_vote;  
+
+3. Who voted for whom  
+The clearest query to show a table visibly changing while friends watch.  
+
+SELECT b.ballot_id, u.voter_id, u.full_name, c.candidate_name, c.party, b.cast_at  
+FROM ballot b  
+JOIN app_user  u ON u.user_id      = b.user_id  
+JOIN candidate c ON c.candidate_id = b.candidate_id  
+ORDER BY b.cast_at DESC;  
+
+4. Winner  
+SELECT c.candidate_name, c.party, count(b.ballot_id) AS votes  
+FROM candidate c  
+JOIN ballot b ON b.candidate_id = c.candidate_id  
+GROUP BY c.candidate_id, c.candidate_name, c.party  
+HAVING count(b.ballot_id) = (SELECT max(v) FROM (SELECT count(*) v FROM ballot GROUP BY candidate_id) t)  
+ORDER BY c.candidate_id;  
+
+5. Voter roll with ballot status  
+Same query the admin panel's second tab uses.  
+
+SELECT u.user_id, u.voter_id, u.full_name, u.age,  
+       (b.ballot_id IS NOT NULL) AS has_voted, c.candidate_name  
+FROM app_user u  
+LEFT JOIN ballot    b ON b.user_id      = u.user_id  
+LEFT JOIN candidate c ON c.candidate_id = b.candidate_id  
+WHERE lower(u.role) = 'voter'  
+ORDER BY u.created_at DESC;  
+
+6. Prove nobody voted twice  
+Returns0 rows — the UNIQUE constraint holding.  
+
+SELECT election_id, user_id, count(*) AS ballots  
+FROM ballot GROUP BY election_id, user_id HAVING count(*) > 1;  
+
+7. Vote share as a percentage  
+SELECT c.candidate_name, count(b.ballot_id) AS votes,  
+       round(100.0*count(b.ballot_id)/NULLIF((SELECT count(*) FROM ballot),0), 1) AS pct  
+FROM candidate c LEFT JOIN ballot b ON b.candidate_id = c.candidate_id  
+GROUP BY c.candidate_id, c.candidate_name ORDER BY votes DESC;  
+
+8. Election status  
+SELECT election_id, title, is_open,  
+       CASE WHEN is_open THEN 'OPEN' ELSE 'CLOSED' END AS status, created_at  
+FROM election;  
