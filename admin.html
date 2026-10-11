@@ -1,0 +1,355 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel — CivicVote</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="site-nav"></div>
+
+<header class="page-head">
+  <div class="container">
+    <span class="eyebrow">Election Administration</span>
+    <h1>Admin Panel</h1>
+    <p>Manage candidates, control election status, and oversee the voter roll.</p>
+  </div>
+</header>
+
+<main class="app-main">
+  <div class="container">
+
+    <div class="stat-row" id="stat-row"></div>
+
+    <div class="election-toggle">
+      <label class="switch">
+        <input type="checkbox" id="election-switch">
+        <span class="slider"></span>
+      </label>
+      <div>
+        <strong id="election-toggle-title">Election status</strong>
+        <p style="margin:2px 0 0; font-size:.85rem;" id="election-toggle-desc">Toggle to open or close voting.</p>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="candidates">Candidates</button>
+      <button class="tab-btn" data-tab="voters">Registered Voters</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-candidates">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; gap:12px; flex-wrap:wrap;">
+        <h3 style="margin:0;">Candidates</h3>
+        <button class="btn btn-primary btn-sm" id="add-candidate-btn">+ Add Candidate</button>
+      </div>
+      <div id="candidates-table-area"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-voters">
+      <h3 style="margin-bottom:18px;">Registered Voters</h3>
+      <div id="voters-table-area"></div>
+    </div>
+
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<!-- Add / Edit candidate modal -->
+<div class="modal-overlay" id="candidate-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modal-title" style="margin:0;">Add Candidate</h3>
+      <button class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <div class="form-msg" id="modal-msg"></div>
+    <form id="candidate-form">
+      <input type="hidden" id="candidate-id">
+      <div class="field">
+        <label for="candidate-name">Candidate name</label>
+        <input type="text" id="candidate-name" required>
+      </div>
+      <div class="field">
+        <label for="candidate-party">Party / Affiliation</label>
+        <input type="text" id="candidate-party" required>
+      </div>
+      <div class="field">
+        <label for="candidate-desc">Short description</label>
+        <textarea id="candidate-desc" rows="3" placeholder="One or two sentences about their platform"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="candidate-submit-btn">Save Candidate</button>
+    </form>
+  </div>
+</div>
+
+</body>
+</html>
+<script src="api.js"></script>
+<script src="script.js"></script>
+<script>
+  const statRow   = document.getElementById("stat-row");
+  const candsArea = document.getElementById("candidates-table-area");
+  const votersArea= document.getElementById("voters-table-area");
+  const switchEl  = document.getElementById("election-switch");
+  const toggleTitle = document.getElementById("election-toggle-title");
+  const toggleDesc  = document.getElementById("election-toggle-desc");
+
+  const modal      = document.getElementById("candidate-modal");
+  const modalTitle = document.getElementById("modal-title");
+  const modalMsg   = document.getElementById("modal-msg");
+  const candidateForm = document.getElementById("candidate-form");
+  const submitBtn  = document.getElementById("candidate-submit-btn");
+
+  // Field ids, spelled exactly as they appear in the markup above.
+  const fId     = document.getElementById("candidate-id");
+  const fName   = document.getElementById("candidate-name");
+  const fParty  = document.getElementById("candidate-party");
+  const fDesc   = document.getElementById("candidate-desc");
+
+  let electionOpen = false;
+
+  /* ---------------- Stats ---------------- */
+
+  function renderStats(results, voters){
+    const candidates = results.candidates || [];
+    const totalVotes = results.total_votes || 0;
+    const votedCount = voters.filter(function(v){ return v.has_voted; }).length;
+
+    statRow.innerHTML = `
+      <div class="stat-card"><div class="num">${candidates.length}</div><div class="lbl">Candidates</div></div>
+      <div class="stat-card"><div class="num">${voters.length}</div><div class="lbl">Registered Voters</div></div>
+      <div class="stat-card"><div class="num">${votedCount}</div><div class="lbl">Votes Cast</div></div>
+      <div class="stat-card"><div class="num">${totalVotes}</div><div class="lbl">Total Ballots</div></div>`;
+  }
+
+  function renderElectionToggle(){
+    switchEl.checked = electionOpen;
+    toggleTitle.textContent = "Election status";
+    toggleDesc.textContent = electionOpen
+      ? "Polls are open \u2014 voters can currently submit ballots."
+      : "Polls are closed \u2014 voting is disabled for all voters.";
+  }
+
+  /* ---------------- Candidates ---------------- */
+
+  function renderCandidatesTable(candidates){
+    if (candidates.length === 0) {
+      candsArea.innerHTML = '<div class="empty-state card"><p>No candidates yet. Add the first one to get started.</p></div>';
+      return;
+    }
+
+    candsArea.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Party</th><th>Votes</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${candidates.map(function(c){
+            return `
+            <tr>
+              <td>
+                <strong>${escapeHtml(c.name)}</strong>
+                <div style="font-size:.8rem; color:var(--ink-muted); max-width:320px;">${escapeHtml(c.description || "")}</div>
+              </td>
+              <td>${escapeHtml(c.party)}</td>
+              <td class="count" style="font-family:var(--font-mono); font-weight:600;">${c.votes}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="btn btn-ghost btn-sm" data-edit="${c.candidate_id}">Edit</button>
+                  <button class="btn btn-danger btn-sm" data-delete="${c.candidate_id}">Delete</button>
+                </div>
+              </td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
+
+    candsArea.querySelectorAll("[data-edit]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        openModal(btn.getAttribute("data-edit"), candidates);
+      });
+    });
+
+    candsArea.querySelectorAll("[data-delete]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        const id = btn.getAttribute("data-delete");
+        const candidate = candidates.find(function(c){ return String(c.candidate_id) === id; });
+
+        if (!confirm('Delete candidate "' + (candidate ? candidate.name : "") + '"? This cannot be undone.')) {
+          return;
+        }
+
+        Api.deleteCandidate(id)
+          .then(refreshAll)
+          .catch(function(error){ alert(errorMessage(error)); });
+      });
+    });
+  }
+
+  /* ---------------- Voter roll ---------------- */
+
+  function renderVotersTable(voters){
+    if (voters.length === 0) {
+      votersArea.innerHTML = '<div class="empty-state card"><p>No voters have registered yet.</p></div>';
+      return;
+    }
+
+    votersArea.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Voter ID</th><th>Email</th><th>Age</th><th>Status</th></tr></thead>
+        <tbody>
+          ${voters.map(function(v){
+            const status = v.has_voted
+              ? '<span class="badge success">Voted</span>'
+              : '<span class="badge pending">Pending</span>';
+            const detail = v.has_voted
+              ? '<div style="font-size:.78rem; color:var(--ink-muted);">&rarr; ' + escapeHtml(v.voted_for_name || "") + '</div>'
+              : "";
+            return `
+            <tr>
+              <td><strong>${escapeHtml(v.name)}</strong>${detail}</td>
+              <td style="font-family:var(--font-mono);">${escapeHtml(v.voter_id)}</td>
+              <td>${escapeHtml(v.email)}</td>
+              <td>${v.age}</td>
+              <td>${status}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  /* ---------------- Refresh ---------------- */
+
+  async function refreshAll(){
+    // /api/results is public; the other two need an administrator token.
+    const results = await Api.getResults();
+    const candidates = results.candidates || [];
+    const voters = await Api.getVoters();
+
+    electionOpen = !!(results.election && results.election.is_open);
+
+    renderStats(results, voters);
+    renderElectionToggle();
+    renderCandidatesTable(candidates);
+    renderVotersTable(voters);
+  }
+
+  /* ---------------- Tabs ---------------- */
+
+  document.querySelectorAll(".tab-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      document.querySelectorAll(".tab-btn").forEach(function(b){ b.classList.remove("active"); });
+      document.querySelectorAll(".tab-panel").forEach(function(p){ p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.getAttribute("data-tab")).classList.add("active");
+    });
+  });
+
+  /* ---------------- Election toggle ---------------- */
+
+  switchEl.addEventListener("change", async function(){
+    const desired = switchEl.checked;
+    switchEl.disabled = true;
+
+    try {
+      await Api.setElectionOpen(desired);
+      electionOpen = desired;
+      renderElectionToggle();
+    } catch (error) {
+      // Put the switch back where it was; the server rejected the change.
+      switchEl.checked = !desired;
+      alert(errorMessage(error));
+    } finally {
+      switchEl.disabled = false;
+    }
+  });
+
+  /* ---------------- Candidate modal ---------------- */
+
+  function openModal(editId, candidates){
+    clearMsg(modalMsg);
+    candidateForm.reset();
+    fId.value = "";
+
+    if (editId) {
+      const c = (candidates || []).find(function(x){
+        return String(x.candidate_id) === String(editId);
+      });
+      if (c) {
+        modalTitle.textContent = "Edit Candidate";
+        fId.value = c.candidate_id;
+        fName.value = c.name;
+        fParty.value = c.party;
+        fDesc.value = c.description || "";
+      }
+    } else {
+      modalTitle.textContent = "Add Candidate";
+    }
+
+    modal.classList.add("show");
+    fName.focus();
+  }
+
+  function closeModal(){ modal.classList.remove("show"); }
+
+  document.getElementById("add-candidate-btn").addEventListener("click", function(){
+    openModal(null);
+  });
+  document.getElementById("modal-close").addEventListener("click", closeModal);
+  modal.addEventListener("click", function(e){ if (e.target === modal) closeModal(); });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape") closeModal();
+  });
+
+  candidateForm.addEventListener("submit", async function(e){
+    e.preventDefault();
+    clearMsg(modalMsg);
+
+    const payload = {
+      candidate_name: fName.value.trim(),
+      party: fParty.value.trim(),
+      description: fDesc.value.trim()
+    };
+
+    if (!payload.candidate_name || !payload.party) {
+      showMsg(modalMsg, "Candidate name and party are both required.", "error");
+      return;
+    }
+
+    const editingId = fId.value;
+    submitBtn.disabled = true;
+
+    try {
+      if (editingId) {
+        await Api.updateCandidate(Object.assign({ candidate_id: editingId }, payload));
+        showMsg(modalMsg, "Candidate updated.", "success");
+      } else {
+        await Api.createCandidate(payload);
+        showMsg(modalMsg, "Candidate added.", "success");
+      }
+
+      await refreshAll();
+      setTimeout(closeModal, 500);
+
+    } catch (error) {
+      showMsg(modalMsg, errorMessage(error), "error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  /* ---------------- Boot ---------------- */
+
+  boot('admin').then(async function(me){
+    // requireAdmin() expects the account, not the whole /api/me payload.
+    if (requireAdmin(me && me.user)) return;
+
+    try {
+      await refreshAll();
+    } catch (error) {
+      renderFatal(candsArea, errorMessage(error));
+    }
+  });
+</script>
+</body>
+</html>
