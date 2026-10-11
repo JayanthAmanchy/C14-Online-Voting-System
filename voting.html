@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cast Your Vote — CivicVote</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="site-nav"></div>
+
+<header class="page-head">
+  <div class="container">
+    <span class="eyebrow">Official Ballot</span>
+    <h1>Cast Your Vote</h1>
+    <p>Select one candidate below, then submit your ballot. You may only vote once.</p>
+  </div>
+</header>
+
+<main class="app-main">
+  <div class="container" style="max-width:760px;">
+
+    <div class="form-msg" id="vote-msg"></div>
+
+    <div id="ballot-area"></div>
+
+  </div>
+</main>
+
+<div id="site-footer"></div>
+
+<script src="api.js"></script>
+<script src="script.js"></script>
+<script>
+  const ballotArea = document.getElementById("ballot-area");
+  const msg = document.getElementById("vote-msg");
+  let submitting = false;
+
+  async function renderBallot(me){
+    // has_voted lives on the /api/me payload, not on me.user.
+    if (me.has_voted) {
+      ballotArea.innerHTML = `
+        <div class="card" style="text-align:center;">
+          <span class="seal" style="margin:0 auto 16px; background:radial-gradient(circle at 32% 28%, #E4D2AE, #B8935A 70%); border-color:#1B2A4A;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0F1B33" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+          </span>
+          <h2>Ballot already submitted</h2>
+          <p>You voted for <strong>${escapeHtml(me.voted_for_name || "a candidate")}</strong>. Each voter may only cast one vote.</p>
+          <a href="results.html" class="btn btn-navy" style="margin-top:8px;">View Live Results</a>
+        </div>`;
+      return;
+    }
+
+    if (!me.election_open) {
+      ballotArea.innerHTML = `
+        <div class="card" style="text-align:center;">
+          <h2>Polls are closed</h2>
+          <p>Voting is not currently open for this election. Please check back later or view the final results.</p>
+          <a href="results.html" class="btn btn-navy" style="margin-top:8px;">View Results</a>
+        </div>`;
+      return;
+    }
+
+    let candidates;
+    try {
+      candidates = await Api.getCandidates();
+    } catch (error) {
+      renderFatal(ballotArea, errorMessage(error));
+      return;
+    }
+
+    if (candidates.length === 0) {
+      ballotArea.innerHTML = `
+        <div class="empty-state card">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/></svg>
+          <p>No candidates have been added to this election yet.</p>
+        </div>`;
+      return;
+    }
+
+    ballotArea.innerHTML = `
+      <form id="ballot-form">
+        <div class="candidate-list">
+          ${candidates.map(function(c){
+            return `
+            <label class="candidate-option" data-id="${c.candidate_id}">
+              <input type="radio" name="candidate" value="${c.candidate_id}" required>
+              <span class="candidate-avatar">${escapeHtml(initials(c.name))}</span>
+              <span class="candidate-info">
+                <h3>${escapeHtml(c.name)}</h3>
+                <span class="party">${escapeHtml(c.party)}</span>
+                <p>${escapeHtml(c.description || "")}</p>
+              </span>
+            </label>`;
+          }).join("")}
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Submit Vote</button>
+      </form>`;
+
+    const options = ballotArea.querySelectorAll(".candidate-option");
+    options.forEach(function(opt){
+      opt.addEventListener("click", function(){
+        options.forEach(function(o){ o.classList.remove("selected"); });
+        opt.classList.add("selected");
+      });
+    });
+
+    document.getElementById("ballot-form").addEventListener("submit", async function(e){
+      e.preventDefault();
+      clearMsg(msg);
+
+      const selected = ballotArea.querySelector('input[name="candidate"]:checked');
+      if (!selected) {
+        showMsg(msg, "Please select a candidate before submitting.", "error");
+        return;
+      }
+
+      // Guard against a double submit creating confusion; the database
+      // rejects the second ballot regardless.
+      if (submitting) return;
+      submitting = true;
+
+      const submitBtn = document.getElementById("ballot-form").querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+
+      showMsg(msg, "Submitting your ballot\u2026", "success");
+
+      try {
+        await Api.castVote(selected.value);
+        showMsg(msg, "Your vote has been recorded. Thank you for participating.", "success");
+        setTimeout(function(){ window.location.href = "results.html"; }, 900);
+      } catch (error) {
+        showMsg(msg, errorMessage(error), "error");
+        submitting = false;
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
+  boot('voting').then(function(me){
+    if (requireUser(me)) return;
+    renderBallot(me);
+  });
+</script>
+</body>
+</html>
